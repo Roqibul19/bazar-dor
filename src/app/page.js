@@ -4,19 +4,10 @@
 import { useEffect, useState } from "react";
 
 const API_URL = "https://api.api-store.workers.dev/api/bazardor";
-const FALLBACK_API_URL =
-  "https://api.abcz.workers.dev/api/bazardor";
+const FALLBACK_API_URL = "https://api.abcz.workers.dev/api/bazardor";
 
-const categories = [
+const fallbackCategories = [
   { name: "সব পণ্য", icon: "🛒", slug: "all" },
-  { name: "চাল", icon: "🍚", slug: "chal" },
-  { name: "ডাল", icon: "🫘", slug: "dal" },
-  { name: "তেল", icon: "🛢️", slug: "tel" },
-  { name: "সবজি", icon: "🥬", slug: "sobji" },
-  { name: "মাছ", icon: "🐟", slug: "mach" },
-  { name: "মাংস", icon: "🍗", slug: "mangsho" },
-  { name: "ডিম-দুধ", icon: "🥚", slug: "dim-dudh" },
-  { name: "মসলা", icon: "🌶️", slug: "mosla" },
 ];
 
 function toBanglaNumber(value) {
@@ -71,9 +62,9 @@ function getProductChange(product) {
 
 function getProductImage(product) {
   const image =
-    product.image ||
     product.imageUrl ||
-    product.image_url;
+    product.image_url ||
+    product.image;
 
   if (
     typeof image === "string" &&
@@ -84,24 +75,22 @@ function getProductImage(product) {
 
   return null;
 }
+
 function getProductIcon(product) {
-  const image = getProductImage(product);
-
-  if (image) return image;
-
-  const icon =
+  return (
     product.categoryIcon ||
     product.category_icon ||
-    product.emoji;
-
-  return typeof icon === "string" ? icon : "🛒";
+    product.image ||
+    product.emoji ||
+    "🛒"
+  );
 }
 
 function getProductUnit(product) {
   return (
-    product.unit ||
     product.unitBn ||
     product.unit_bn ||
+    product.unit ||
     "কেজি"
   );
 }
@@ -141,6 +130,9 @@ function ProductCard({ product }) {
             src={image}
             alt={getProductName(product)}
             loading="lazy"
+            onError={(event) => {
+              event.currentTarget.style.display = "none";
+            }}
           />
         ) : (
           <span>{icon}</span>
@@ -165,8 +157,7 @@ function ProductCard({ product }) {
               : "price-same"
         }`}
       >
-        {change > 0 ? "▲" : change < 0 ? "▼" : "—"}
-        {" "}
+        {change > 0 ? "▲" : change < 0 ? "▼" : "—"}{" "}
         {formatPrice(Math.abs(change))}%
         {" · "}
         {getChangeLabel(change)}
@@ -229,13 +220,92 @@ function ProductSection({
 
 export default function Home() {
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState(
+    fallbackCategories
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [today, setToday] = useState("");
 
+  /* Date */
+
   useEffect(() => {
     setToday(getBanglaDate(new Date()));
+  }, []);
 
+  /* Fetch Categories from API */
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchCategories() {
+      const urls = [
+        `${API_URL}/categories`,
+        `${FALLBACK_API_URL}/categories`,
+      ];
+
+      for (const url of urls) {
+        try {
+          const response = await fetch(url);
+
+          if (!response.ok) continue;
+
+          const result = await response.json();
+
+          const list = Array.isArray(result)
+            ? result
+            : result.categories ??
+              result.data?.categories ??
+              result.data ??
+              [];
+
+          if (!Array.isArray(list) || list.length === 0) {
+            continue;
+          }
+
+          const apiCategories = list.map((item) => ({
+            name:
+              item.nameBn ||
+              item.name_bn ||
+              item.name ||
+              item.id ||
+              "ক্যাটাগরি",
+            icon:
+              item.icon ||
+              item.categoryIcon ||
+              item.category_icon ||
+              "🛒",
+            slug: item.slug || item.id,
+          }));
+
+          if (!cancelled) {
+            setCategories([
+              fallbackCategories[0],
+              ...apiCategories.filter(
+                (item) => item.slug !== "all"
+              ),
+            ]);
+          }
+
+          return;
+        } catch {
+          // Try fallback API.
+        }
+      }
+
+      console.error("ক্যাটাগরি API থেকে লোড করা যায়নি।");
+    }
+
+    fetchCategories();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /* Fetch Products from API */
+
+  useEffect(() => {
     let cancelled = false;
 
     async function fetchProducts() {
@@ -270,7 +340,7 @@ export default function Home() {
               break;
             }
           } catch {
-            // Try the fallback API.
+            // Try fallback API.
           }
         }
 
@@ -306,20 +376,23 @@ export default function Home() {
   const risingProducts = products
     .filter((product) => getProductChange(product) > 0)
     .sort(
-      (a, b) => getProductChange(b) - getProductChange(a)
+      (a, b) =>
+        getProductChange(b) - getProductChange(a)
     )
     .slice(0, 6);
 
   const fallingProducts = products
     .filter((product) => getProductChange(product) < 0)
     .sort(
-      (a, b) => getProductChange(a) - getProductChange(b)
+      (a, b) =>
+        getProductChange(a) - getProductChange(b)
     )
     .slice(0, 6);
 
   return (
     <>
       {/* Header */}
+
       <header className="site-header">
         <div className="container header-top">
           <a
@@ -343,15 +416,16 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Category Navigation */}
+        {/* API Category Navigation */}
+
         <nav
           className="category-nav"
           aria-label="পণ্যের ক্যাটাগরি"
         >
           <div className="container category-list">
-            {categories.map((category) => (
+            {categories.map((category, index) => (
               <a
-                key={category.slug}
+                key={`${category.slug}-${index}`}
                 href={
                   category.slug === "all"
                     ? "/#all-products"
@@ -372,6 +446,7 @@ export default function Home() {
       </header>
 
       {/* Running Price Ticker */}
+
       <div
         className="price-ticker"
         aria-label="পণ্যের চলমান বাজারদর"
@@ -396,7 +471,9 @@ export default function Home() {
               return (
                 <span
                   className="ticker-item"
-                  key={`${getProductSlug(product) ?? index}-${index}`}
+                  key={`${
+                    getProductSlug(product) ?? index
+                  }-${index}`}
                 >
                   <span>{isImage ? "🛒" : icon}</span>
                   <span>{getProductName(product)}</span>
@@ -418,8 +495,7 @@ export default function Home() {
                       ? "▲"
                       : change < 0
                         ? "▼"
-                        : "—"}
-                    {" "}
+                        : "—"}{" "}
                     {formatPrice(Math.abs(change))}%
                   </span>
                 </span>
@@ -435,6 +511,7 @@ export default function Home() {
 
       <main className="container home-content">
         {/* Hero Banner */}
+
         <section className="hero">
           <div className="hero-copy">
             <span className="hero-eyebrow">
@@ -454,12 +531,14 @@ export default function Home() {
               এবং দামের পরিবর্তন এক জায়গায়।
             </p>
 
-            <a href="#all-products" className="hero-button">
+            <a
+              href="#all-products"
+              className="hero-button"
+            >
               সব পণ্য দেখুন →
             </a>
           </div>
 
-          {/* Only one banner image on the right */}
           <div className="hero-illustration">
             <img
               src="/bazar-hero.png"
@@ -470,6 +549,7 @@ export default function Home() {
         </section>
 
         {/* Loading / Error */}
+
         {loading && (
           <p className="status-message" role="status">
             ⏳ পণ্যের দাম লোড হচ্ছে...
@@ -483,6 +563,7 @@ export default function Home() {
         )}
 
         {/* Product Sections */}
+
         {!loading && !error && products.length > 0 && (
           <>
             <ProductSection
@@ -516,6 +597,7 @@ export default function Home() {
       </main>
 
       {/* Footer */}
+
       <footer className="site-footer">
         <div className="container">
           <p>
