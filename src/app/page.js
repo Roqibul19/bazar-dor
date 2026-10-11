@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PriceChangeSections from "./components/PriceChangeSections";
 
 const API_URL = "https://api.api-store.workers.dev/api/bazardor";
 const FALLBACK_API_URL = "https://api.abcz.workers.dev/api/bazardor";
@@ -50,14 +51,85 @@ function getProductPrice(product) {
   );
 }
 
+
 function getProductChange(product) {
-  return Number(
-    product.change ??
-      product.pct ??
-      product.changePercent ??
-      product.change_percent ??
-      0
-  );
+  const today = Number(product.today);
+  const yesterday = Number(product.yesterday);
+
+  // আজ ও গতকালের দাম থাকলে প্রকৃত পরিবর্তনের দিক নির্ণয়
+  if (
+    product.today !== null &&
+    product.today !== undefined &&
+    product.today !== "" &&
+    product.yesterday !== null &&
+    product.yesterday !== undefined &&
+    product.yesterday !== "" &&
+    Number.isFinite(today) &&
+    Number.isFinite(yesterday)
+  ) {
+    if (today > yesterday) return today - yesterday;
+    if (today < yesterday) return today - yesterday;
+    return 0;
+  }
+
+  // API-এর পরিবর্তনের তথ্য ব্যবহার
+  const change = product.change;
+
+  if (change !== null && change !== undefined && change !== "") {
+    const value = Number(
+      String(change).replace(/[%+,]/g, "").trim()
+    );
+
+    if (Number.isFinite(value)) {
+      if (product.dir === "down" || product.dir === "decrease") {
+        return -Math.abs(value);
+      }
+
+      if (product.dir === "up" || product.dir === "increase") {
+        return Math.abs(value);
+      }
+
+      return value;
+    }
+  }
+
+  // শতাংশের ফিল্ড থাকলে সেটি ব্যবহার
+  for (const field of [
+    "pct",
+    "changePercent",
+    "change_percent",
+  ]) {
+    const raw = product[field];
+
+    if (raw !== null && raw !== undefined && raw !== "") {
+      const value = Number(
+        String(raw).replace(/[%+,]/g, "").trim()
+      );
+
+      if (Number.isFinite(value)) {
+        if (product.dir === "down" || product.dir === "decrease") {
+          return -Math.abs(value);
+        }
+
+        if (product.dir === "up" || product.dir === "increase") {
+          return Math.abs(value);
+        }
+
+        return value;
+      }
+    }
+  }
+
+  // API-তে পরিবর্তনের তথ্য নেই
+  if (product.dir === "up" || product.dir === "increase") {
+    return 1;
+  }
+
+  if (product.dir === "down" || product.dir === "decrease") {
+    return -1;
+  }
+
+  return 0;
 }
 
 function getProductImage(product) {
@@ -219,6 +291,7 @@ function ProductSection({
 /* Homepage */
 
 export default function Home() {
+
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState(
     fallbackCategories
@@ -596,19 +669,7 @@ export default function Home() {
         )}
       </main>
 
-      {/* Footer */}
-
-      <footer className="site-footer">
-        <div className="container">
-          <p>
-            বাজার দর — প্রয়োজনীয় পণ্যের দাম এক নজরে।
-          </p>
-          <p>
-            সকল দাম সম্ভাব্য; বাজার অবস্থার ওপর নির্ভর করে
-            পরিবর্তিত হয়।
-          </p>
-        </div>
-      </footer>
+    
     </>
   );
 }
