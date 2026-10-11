@@ -17,6 +17,7 @@
 - Better Auth
 - SQLite
 - CSS
+- Tailwind
 
 ## Getting Started
 
